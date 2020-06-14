@@ -1,0 +1,254 @@
+---
+title: "Assignment4"
+author: "Prahlad"
+date: "6/13/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Load Packages
+
+```{r}
+suppressMessages(library(ggplot2))
+suppressMessages(library(caret))
+suppressMessages(library(e1071))
+library(randomForest)
+```
+
+
+
+# Read Data
+
+
+```{r}
+setwd("C:/Users/SPRAHLA2/Desktop/ml_rcourse")
+#Load DataSet
+df_training <- read.csv("C:/Users/SPRAHLA2/Desktop/ml_rcourse/pml-training.csv",stringsAsFactors = FALSE)
+df_testing <- read.csv("C:/Users/SPRAHLA2/Desktop/ml_rcourse/pml-testing.csv",stringsAsFactors = FALSE)
+```
+
+
+
+# Understanding Data
+
+## dimension of data
+```{r}
+
+#colnames of data
+dim(df_training)
+
+```
+
+**160 variables**
+
+
+## no of unique users
+```{r}
+
+#no of unique users
+
+unique(df_training$user_name)
+
+```
+
+**6 users in dataset**
+
+
+## no of classes in classe
+
+```{r}
+
+#classe dependent variable
+
+unique(df_training$classe)
+
+```
+
+**6 classe classes and number of users != number of classe**
+
+
+## range of data
+
+```{r}
+
+#data recording start and end time
+
+min(df_training$cvtd_timestamp)
+max(df_training$cvtd_timestamp)
+```
+
+**Data is from november 30th to december 2nd**
+
+
+
+## Are There Any Missing Value In Data?
+
+```{r}
+which(sapply(df_training,function(x) sum(is.na(x))/nrow(df_training)*100)>95)
+```
+
+**Yes there are missing values.67 variables have missing value % greater than 95%. We have to be careful of variable selection for model building**
+
+
+
+# Taking only set of variables which are not having high percentage of missing value and leaving out statistical derived variables like (max,min,avg,skewness,kurtosis,variance,standard deviation) for analysis
+
+```{r}
+colnames(df_training)
+```
+
+
+## data variable selection
+
+```{r}
+df_training_selected <- df_training[,c("user_name","cvtd_timestamp","new_window","num_window","roll_belt","pitch_belt","yaw_belt","total_accel_belt","roll_arm","pitch_arm","yaw_arm","total_accel_arm","roll_dumbbell","pitch_dumbbell","yaw_dumbbell","total_accel_dumbbell","roll_forearm","pitch_forearm","yaw_forearm","total_accel_forearm","classe")]
+```
+
+
+## check missing value %
+
+```{r}
+sapply(df_training_selected,function(x) sum(is.na(x))/nrow(df_training)*100)
+```
+
+
+
+
+# Exploratory Analysis(Only 5 plots are recommended so i am picking just one variable in each of arm,dumbbell,forearm,belt from selected variable done in the above step)
+
+
+## Usage of belt,arm,dumbbell,forearm among users each day(4 days!)
+
+```{r}
+df_training_selected$day <- as.character(as.Date(df_training_selected$cvtd_timestamp,"%d/%m/%Y"))
+table(df_training_selected$user_name,df_training_selected$day)
+```
+
+**In distribution of 4 days usage each user has tried on different days**
+
+
+
+## Performance of classe exercise around belt
+
+```{r fig.width=8,fig.height=7,message= FALSE,warning=FALSE,echo=FALSE}
+ggplot(df_training_selected,aes(x=user_name,y=roll_belt))+geom_boxplot()+facet_wrap(~classe,scales = "free")+theme(axis.text.x = element_text(angle = 90))
+```
+
+
+
+## Performance of classe exercise around arm
+
+```{r fig.width=8,fig.height=7,message= FALSE,warning=FALSE,echo=FALSE}
+ggplot(df_training_selected,aes(x=user_name,y=roll_arm))+geom_boxplot()+facet_wrap(~classe,scales = "free")+theme(axis.text.x = element_text(angle = 90))
+```
+
+
+
+## Performance of classe exercise around fore arm
+
+```{r fig.width=8,fig.height=7,message= FALSE,warning=FALSE,echo=FALSE}
+ggplot(df_training_selected,aes(x=user_name,y=roll_forearm))+geom_boxplot()+facet_wrap(~classe,scales = "free")+theme(axis.text.x = element_text(angle = 90))
+```
+
+
+## Performance of classe exercise around dumbbell
+
+```{r fig.width=8,fig.height=7,message= FALSE,warning=FALSE,echo=FALSE}
+ggplot(df_training_selected,aes(x=user_name,y=roll_dumbbell))+geom_boxplot()+facet_wrap(~classe,scales = "free")+theme(axis.text.x = element_text(angle = 90))
+```
+
+
+
+**There is variablity in each user for each classe**
+
+
+
+## Check For Multicollinearity Between Numerical Variables
+
+```{r}
+suppressMessages(library(pander))
+p <- sapply(df_training_selected,function(x) is.numeric(x))
+t <- df_training_selected[,p]
+#Remove Na's
+q1 <- na.omit(t)
+c <-as.data.frame(cor(q1))
+panderOptions('table.split.table', Inf)
+pander(c)
+
+```
+
+**Multi collinearity exists but since we are building tree based models including rf where each tree is different.we can try to remove them in further iterations**
+
+
+
+# Model Building
+
+
+## distribution of classe variable
+
+```{r}
+table(df_training_selected$classe)
+```
+
+**Equal distribution of classes. We can go for accuracy as metric**
+
+
+
+## Building a default RF with no hyper parameters and OOB is a CV metric
+
+## 1)Since the user names are same in both train and test we can use user name
+## 2) dropping new wndow as test set only has value "no"
+
+
+```{r}
+
+#convert dependent to factor
+df_training_selected$classe <- as.factor(df_training_selected$classe)
+
+# dropping unwanted column
+
+df_training_selected$day <- NULL
+
+#character to factor
+df_training_selected$new_window <- as.factor(df_training_selected$new_window)
+df_training_selected$user_name <- as.factor(df_training_selected$user_name)
+
+set.seed(3457)
+
+#training
+model_rf <- randomForest(classe~.-cvtd_timestamp-new_window,data=df_training_selected)
+
+model_rf
+```
+
+**The accuracy is 0.99 and the oob error is 1% wich is equivalent to validation test error**
+
+
+
+## Varimp
+
+```{r}
+varImp(model_rf)
+```
+
+**we could see from model_rf that variables user_name,num_window,roll_belt,pitch_belt,yaw_belt have high importance compared to other predictors**
+
+
+
+# Prediction on test data
+
+```{r}
+df_testing_selected <- df_testing[,c("user_name","cvtd_timestamp","new_window","num_window","roll_belt","pitch_belt","yaw_belt","total_accel_belt","roll_arm","pitch_arm","yaw_arm","total_accel_arm","roll_dumbbell","pitch_dumbbell","yaw_dumbbell","total_accel_dumbbell","roll_forearm","pitch_forearm","yaw_forearm","total_accel_forearm")]
+
+#character to factor
+df_testing_selected$new_window <- as.factor(df_testing_selected$new_window)
+df_testing_selected$user_name <- as.factor(df_testing_selected$user_name)
+
+predictions <- predict(model_rf,df_testing_selected)
+
+predictions
+```
